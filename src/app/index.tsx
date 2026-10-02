@@ -30,15 +30,64 @@ type UmamiWindow = Window & {
   };
 };
 
+type PendingUmamiEvent = {
+  eventName: string;
+  properties?: Record<string, string | number | boolean>;
+};
+
+const pendingUmamiEvents: PendingUmamiEvent[] = [];
+let umamiRetryTimer: ReturnType<typeof setInterval> | null = null;
+let umamiRetryCount = 0;
+
+function flushPendingUmamiEvents() {
+  const tracker = (window as UmamiWindow).umami;
+  if (!tracker) {
+    return false;
+  }
+
+  while (pendingUmamiEvents.length > 0) {
+    const event = pendingUmamiEvents.shift();
+    if (event) {
+      tracker.track(event.eventName, event.properties);
+    }
+  }
+
+  if (umamiRetryTimer !== null) {
+    clearInterval(umamiRetryTimer);
+    umamiRetryTimer = null;
+  }
+  umamiRetryCount = 0;
+  return true;
+}
+
 function trackEvent(
   eventName: string,
-  props?: Record<string, string | number | boolean>,
+  properties?: Record<string, string | number | boolean>,
 ) {
   if (Platform.OS !== 'web') {
     return;
   }
 
-  (window as UmamiWindow).umami?.track(eventName, props);
+  if (flushPendingUmamiEvents()) {
+    (window as UmamiWindow).umami?.track(eventName, properties);
+    return;
+  }
+
+  pendingUmamiEvents.push({ eventName, properties });
+  if (umamiRetryTimer === null) {
+    umamiRetryCount = 0;
+    umamiRetryTimer = setInterval(() => {
+      if (flushPendingUmamiEvents()) {
+        return;
+      }
+
+      umamiRetryCount += 1;
+      if (umamiRetryCount >= 100 && umamiRetryTimer !== null) {
+        clearInterval(umamiRetryTimer);
+        umamiRetryTimer = null;
+      }
+    }, 100);
+  }
 }
 
 function getDateKey(date = new Date()) {
