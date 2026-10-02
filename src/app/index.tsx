@@ -101,6 +101,15 @@ function trackEvent(
       if (umamiRetryCount >= 100 && umamiRetryTimer !== null) {
         clearInterval(umamiRetryTimer);
         umamiRetryTimer = null;
+        const script = document.querySelector<HTMLScriptElement>(
+          'script[src="https://cloud.umami.is/script.js"]',
+        );
+        console.error('[Folient analytics] Umami tracker did not become available; queued events have not been sent.', {
+          scriptPresent: Boolean(script),
+          websiteIdConfigured: Boolean(script?.dataset.websiteId),
+          queuedEventNames: pendingUmamiEvents.map(({ eventName: name }) => name),
+          hint: 'Check the Umami script request in Network and disable content blockers while testing.',
+        });
       }
     }, 100);
   }
