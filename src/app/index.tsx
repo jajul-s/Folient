@@ -26,7 +26,11 @@ const PENNY_STOCK_UNLOCK_XP = 150;
 
 type UmamiWindow = Window & {
   umami?: {
-    track: (eventName: string, properties?: Record<string, string | number | boolean>) => void;
+    track: (
+      eventName: string,
+      properties?: Record<string, string | number | boolean>,
+    ) => void | Promise<void>;
+    getSession?: () => { website: string | null };
   };
 };
 
@@ -43,11 +47,20 @@ function sendUmamiEvent(
   tracker: NonNullable<UmamiWindow['umami']>,
   event: PendingUmamiEvent,
 ) {
-  console.info('[Folient analytics] Sending Umami event', event.eventName, event.properties ?? {});
+  console.info('[Folient analytics] Calling Umami track (not delivery confirmation)', {
+    eventName: event.eventName,
+    websiteId: tracker.getSession?.().website ?? 'unknown',
+    properties: event.properties ?? {},
+  });
   try {
-    tracker.track(event.eventName, event.properties);
+    const result = tracker.track(event.eventName, event.properties);
+    if (result && typeof result.then === 'function') {
+      result.catch((error: unknown) => {
+        console.error('[Folient analytics] Umami track rejected', event.eventName, error);
+      });
+    }
   } catch (error) {
-    console.error('[Folient analytics] Umami event failed', event.eventName, error);
+    console.error('[Folient analytics] Umami track threw', event.eventName, error);
   }
 }
 
