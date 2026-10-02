@@ -39,6 +39,18 @@ const pendingUmamiEvents: PendingUmamiEvent[] = [];
 let umamiRetryTimer: ReturnType<typeof setInterval> | null = null;
 let umamiRetryCount = 0;
 
+function sendUmamiEvent(
+  tracker: NonNullable<UmamiWindow['umami']>,
+  event: PendingUmamiEvent,
+) {
+  console.info('[Folient analytics] Sending Umami event', event.eventName, event.properties ?? {});
+  try {
+    tracker.track(event.eventName, event.properties);
+  } catch (error) {
+    console.error('[Folient analytics] Umami event failed', event.eventName, error);
+  }
+}
+
 function flushPendingUmamiEvents() {
   const tracker = (window as UmamiWindow).umami;
   if (!tracker) {
@@ -48,7 +60,7 @@ function flushPendingUmamiEvents() {
   while (pendingUmamiEvents.length > 0) {
     const event = pendingUmamiEvents.shift();
     if (event) {
-      tracker.track(event.eventName, event.properties);
+      sendUmamiEvent(tracker, event);
     }
   }
 
@@ -69,11 +81,15 @@ function trackEvent(
   }
 
   if (flushPendingUmamiEvents()) {
-    (window as UmamiWindow).umami?.track(eventName, properties);
+    const tracker = (window as UmamiWindow).umami;
+    if (tracker) {
+      sendUmamiEvent(tracker, { eventName, properties });
+    }
     return;
   }
 
   pendingUmamiEvents.push({ eventName, properties });
+  console.info('[Folient analytics] Queued Umami event until tracker is ready', eventName);
   if (umamiRetryTimer === null) {
     umamiRetryCount = 0;
     umamiRetryTimer = setInterval(() => {
