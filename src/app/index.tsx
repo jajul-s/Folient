@@ -26,41 +26,46 @@ const PENNY_STOCK_UNLOCK_XP = 150;
 
 type UmamiWindow = Window & {
   umami?: {
-    track: (
-      eventName: string,
-      properties?: Record<string, string | number | boolean>,
-    ) => void | Promise<void>;
+    track: {
+      (
+        eventName: string,
+        properties?: Record<string, string | number | boolean>,
+      ): void | Promise<void>;
+      (pageview: (properties: Record<string, unknown>) => Record<string, unknown>): void | Promise<void>;
+    };
     getSession?: () => { website: string | null };
   };
 };
 
-type PendingUmamiEvent = {
-  eventName: string;
-  properties?: Record<string, string | number | boolean>;
-};
+type PendingUmamiAction =
+  | { type: 'event'; eventName: string; properties?: Record<string, string | number | boolean> }
+  | { type: 'pageview'; url: string };
 
-const pendingUmamiEvents: PendingUmamiEvent[] = [];
+const pendingUmamiActions: PendingUmamiAction[] = [];
 let umamiRetryTimer: ReturnType<typeof setInterval> | null = null;
 let umamiRetryCount = 0;
 
 function sendUmamiEvent(
   tracker: NonNullable<UmamiWindow['umami']>,
-  event: PendingUmamiEvent,
+  action: PendingUmamiAction,
 ) {
+  const eventName = action.type === 'event' ? action.eventName : `pageview:${action.url}`;
   console.info('[Folient analytics] Calling Umami track (not delivery confirmation)', {
-    eventName: event.eventName,
+    eventName,
     websiteId: tracker.getSession?.().website ?? 'unknown',
-    properties: event.properties ?? {},
+    properties: action.type === 'event' ? action.properties ?? {} : { url: action.url },
   });
   try {
-    const result = tracker.track(event.eventName, event.properties);
+    const result = action.type === 'event'
+      ? tracker.track(action.eventName, action.properties)
+      : tracker.track((properties) => ({ ...properties, url: action.url }));
     if (result && typeof result.then === 'function') {
       result.catch((error: unknown) => {
-        console.error('[Folient analytics] Umami track rejected', event.eventName, error);
+        console.error('[Folient analytics] Umami track rejected', eventName, error);
       });
     }
   } catch (error) {
-    console.error('[Folient analytics] Umami track threw', event.eventName, error);
+    console.error('[Folient analytics] Umami track threw', eventName, error);
   }
 }
 
@@ -70,10 +75,10 @@ function flushPendingUmamiEvents() {
     return false;
   }
 
-  while (pendingUmamiEvents.length > 0) {
-    const event = pendingUmamiEvents.shift();
-    if (event) {
-      sendUmamiEvent(tracker, event);
+  while (pendingUmamiActions.length > 0) {
+    const action = pendingUmamiActions.shift();
+    if (action) {
+      sendUmamiEvent(tracker, action);
     }
   }
 
@@ -85,10 +90,7 @@ function flushPendingUmamiEvents() {
   return true;
 }
 
-function trackEvent(
-  eventName: string,
-  properties?: Record<string, string | number | boolean>,
-) {
+function trackUmamiAction(action: PendingUmamiAction) {
   if (Platform.OS !== 'web') {
     return;
   }
@@ -96,13 +98,13 @@ function trackEvent(
   if (flushPendingUmamiEvents()) {
     const tracker = (window as UmamiWindow).umami;
     if (tracker) {
-      sendUmamiEvent(tracker, { eventName, properties });
+      sendUmamiEvent(tracker, action);
     }
     return;
   }
 
-  pendingUmamiEvents.push({ eventName, properties });
-  console.info('[Folient analytics] Queued Umami event until tracker is ready', eventName);
+  pendingUmamiActions.push(action);
+  console.info('[Folient analytics] Queued Umami tracking until tracker is ready', action);
   if (umamiRetryTimer === null) {
     umamiRetryCount = 0;
     umamiRetryTimer = setInterval(() => {
@@ -120,12 +122,26 @@ function trackEvent(
         console.error('[Folient analytics] Umami tracker did not become available; queued events have not been sent.', {
           scriptPresent: Boolean(script),
           websiteIdConfigured: Boolean(script?.dataset.websiteId),
-          queuedEventNames: pendingUmamiEvents.map(({ eventName: name }) => name),
+          queuedActions: pendingUmamiActions,
           hint: 'Check the Umami script request in Network and disable content blockers while testing.',
         });
       }
     }, 100);
   }
+}
+
+function trackEvent(
+  eventName: string,
+  properties?: Record<string, string | number | boolean>,
+) {
+  trackUmamiAction({ type: 'event', eventName, properties });
+}
+
+function trackVirtualPageView(screen: string) {
+  trackUmamiAction({
+    type: 'pageview',
+    url: new URL(`/app/${screen}`, window.location.origin).href,
+  });
 }
 
 function getDateKey(date = new Date()) {
@@ -820,6 +836,7 @@ export default function App() {
   const [notificationsReady, setNotificationsReady] = useState(false);
   const notificationId = useRef<string | null>(null);
   const appOpenedTracked = useRef(false);
+  const lastTrackedScreen = useRef<string | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -1015,6 +1032,21 @@ export default function App() {
     const lessonIndex = allLessonsComplete ? currentScenarioIndex : currentLessonIndex;
     trackEvent('app_opened', { lessonId: LESSONS[lessonIndex].id });
   }, [allLessonsComplete, currentLessonIndex, currentScenarioIndex, hasLoadedProgress]);
+
+  useEffect(() => {
+    if (Platform.OS !== 'web' || !hasLoadedProgress) {
+      return;
+    }
+
+    if (lastTrackedScreen.current !== screen) {
+      lastTrackedScreen.current = screen;
+      trackVirtualPageView(screen);
+    }
+
+    const handlePageHide = () => trackVirtualPageView(screen);
+    window.addEventListener('pagehide', handlePageHide);
+    return () => window.removeEventListener('pagehide', handlePageHide);
+  }, [hasLoadedProgress, screen]);
 
   if (!fontsLoaded) return <View style={styles.container} />;
 

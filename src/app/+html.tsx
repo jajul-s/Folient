@@ -16,6 +16,7 @@ export default function Root({ children }: PropsWithChildren) {
         <link rel="manifest" href="/manifest.json" />
         <script
           defer
+          data-auto-pageview="false"
           data-website-id={process.env.EXPO_PUBLIC_UMAMI_WEBSITE_ID || UMAMI_WEBSITE_ID}
           src="https://cloud.umami.is/script.js"
         />
