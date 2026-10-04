@@ -819,6 +819,7 @@ export default function App() {
   const [pennyStockCelebrationAnimating, setPennyStockCelebrationAnimating] = useState(false);
   const [notificationsReady, setNotificationsReady] = useState(false);
   const notificationId = useRef<string | null>(null);
+  const appOpenedTracked = useRef(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -1006,8 +1007,14 @@ export default function App() {
   }, [currentLessonIndex, allLessonsComplete, hasLoadedProgress, notificationsReady]);
 
   useEffect(() => {
-    trackEvent('app_opened');
-  }, []);
+    if (!hasLoadedProgress || appOpenedTracked.current) {
+      return;
+    }
+
+    appOpenedTracked.current = true;
+    const lessonIndex = allLessonsComplete ? currentScenarioIndex : currentLessonIndex;
+    trackEvent('app_opened', { lessonId: LESSONS[lessonIndex].id });
+  }, [allLessonsComplete, currentLessonIndex, currentScenarioIndex, hasLoadedProgress]);
 
   if (!fontsLoaded) return <View style={styles.container} />;
 
@@ -1035,7 +1042,7 @@ export default function App() {
     setEarnedXp((currentEarnedXp) => currentEarnedXp + quizXp);
     setStreak(nextStreak);
     setLastCompletionDate(today);
-    trackEvent('lesson_completed', { lessonIndex: currentLessonIndex });
+    trackEvent('lesson_completed', { lessonIndex: currentLessonIndex, lessonId: lesson.id });
     setScreen('result');
   };
 
@@ -1093,11 +1100,17 @@ export default function App() {
           currentLessonIndex={currentLessonIndex}
           currentScenarioIndex={currentScenarioIndex}
           onStart={() => {
-            trackEvent('lesson_started', { lessonIndex: currentLessonIndex });
+            trackEvent('lesson_started', {
+              lessonIndex: currentLessonIndex,
+              lessonId: LESSONS[currentLessonIndex].id,
+            });
             setScreen('learn');
           }}
           onStartScenario={() => {
-            trackEvent('lesson_started', { lessonIndex: currentScenarioIndex });
+            trackEvent('lesson_started', {
+              lessonIndex: currentScenarioIndex,
+              lessonId: LESSONS[currentScenarioIndex].id,
+            });
             setScreen('scenario');
           }}
           xp={xp}
@@ -1112,7 +1125,10 @@ export default function App() {
           selected={selected}
           setSelected={setSelected}
           onContinue={() => completeLesson(selected)}
-          onAnswer={(correct) => trackEvent('quiz_answered', { result: correct ? 'correct' : 'incorrect' })}
+          onAnswer={(correct) => trackEvent('quiz_answered', {
+            lessonId: LESSONS[currentLessonIndex].id,
+            result: correct ? 'correct' : 'incorrect',
+          })}
         />
       )}
       {screen === 'scenario' && (
@@ -1121,7 +1137,10 @@ export default function App() {
           selected={selected}
           setSelected={setSelected}
           onContinue={() => completeScenario(selected)}
-          onAnswer={(correct) => trackEvent('quiz_answered', { result: correct ? 'correct' : 'incorrect' })}
+          onAnswer={(correct) => trackEvent('quiz_answered', {
+            lessonId: LESSONS[currentScenarioIndex].id,
+            result: correct ? 'correct' : 'incorrect',
+          })}
           scenario
         />
       )}
