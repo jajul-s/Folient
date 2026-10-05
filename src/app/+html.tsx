@@ -1,8 +1,6 @@
 import { ScrollViewStyleReset } from 'expo-router/html';
 import { type PropsWithChildren } from 'react';
 
-const UMAMI_WEBSITE_ID = '50e315ad-9659-4caf-8c34-242bd364cc8e';
-
 export default function Root({ children }: PropsWithChildren) {
   return (
     <html lang="en">
@@ -14,12 +12,6 @@ export default function Root({ children }: PropsWithChildren) {
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         <link rel="manifest" href="/manifest.json" />
-        <script
-          defer
-          data-auto-pageview="false"
-          data-website-id={process.env.EXPO_PUBLIC_UMAMI_WEBSITE_ID || UMAMI_WEBSITE_ID}
-          src="https://cloud.umami.is/script.js"
-        />
         <ScrollViewStyleReset />
       </head>
       <body>{children}</body>
